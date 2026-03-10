@@ -7,6 +7,31 @@ export async function fetchCategories(storeId: string) {
   return res.json();
 }
 
+export async function fetchGlobalCategories() {
+  const res = await fetch("/api/admin/categories-global");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Erro ao buscar categorias globais.");
+  }
+  return res.json();
+}
+
+export async function addStoreCategoryApi(input: {
+  store_id: string;
+  category_id: string;
+  is_active: boolean;
+}) {
+  const res = await fetch("/api/admin/categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Erro ao adicionar categoria.");
+  }
+}
+
 export async function createCategoryApi(input: {
   name: string;
   is_active: boolean;

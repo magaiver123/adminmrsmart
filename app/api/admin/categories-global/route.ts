@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
+function generateSlug(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+}
+
 export async function GET() {
   const supabase = await createSupabaseServerClient()
 
   const { data, error } = await supabase
-    .from("products")
-    .select(
-      `
-      id,
-      name,
-      description,
-      image_url,
-      is_active,
-      category_id,
-      categories ( name )
-    `
-    )
+    .from("categories")
+    .select("id, name, slug, is_active")
     .order("name", { ascending: true })
 
   if (error) {
@@ -31,35 +30,35 @@ export async function POST(req: Request) {
   const body = await req.json()
 
   const name = String(body?.name ?? "").trim()
-  const description = String(body?.description ?? "").trim() || null
-  const imageUrl = String(body?.image_url ?? "").trim() || null
-  const categoryId = String(body?.category_id ?? "").trim() || null
   const isActive = typeof body?.is_active === "boolean" ? body.is_active : true
 
   if (!name) {
     return NextResponse.json({ error: "name é obrigatório." }, { status: 400 })
   }
 
-  const { data, error } = await supabase
-    .from("products")
-    .insert({
-      name,
-      description,
-      image_url: imageUrl,
-      category_id: categoryId,
-      is_active: isActive,
-    })
-    .select(
-      `
-      id,
-      name,
-      description,
-      image_url,
-      is_active,
-      category_id,
-      categories ( name )
-    `
+  const slug = generateSlug(name)
+
+  const { data: existingCategory, error: existingError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle()
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 })
+  }
+
+  if (existingCategory) {
+    return NextResponse.json(
+      { error: "Já existe uma categoria com este nome." },
+      { status: 409 }
     )
+  }
+
+  const { data, error } = await supabase
+    .from("categories")
+    .insert({ name, slug, is_active: isActive })
+    .select("id, name, slug, is_active")
     .single()
 
   if (error) {
@@ -75,9 +74,6 @@ export async function PUT(req: Request) {
 
   const id = String(body?.id ?? "")
   const name = String(body?.name ?? "").trim()
-  const description = String(body?.description ?? "").trim() || null
-  const imageUrl = String(body?.image_url ?? "").trim() || null
-  const categoryId = String(body?.category_id ?? "").trim() || null
   const isActive = typeof body?.is_active === "boolean" ? body.is_active : true
 
   if (!id || !name) {
@@ -87,27 +83,35 @@ export async function PUT(req: Request) {
     )
   }
 
+  const slug = generateSlug(name)
+
+  const { data: duplicate, error: duplicateError } = await supabase
+    .from("categories")
+    .select("id")
+    .eq("slug", slug)
+    .neq("id", id)
+    .maybeSingle()
+
+  if (duplicateError) {
+    return NextResponse.json({ error: duplicateError.message }, { status: 500 })
+  }
+
+  if (duplicate) {
+    return NextResponse.json(
+      { error: "Já existe uma categoria com este nome." },
+      { status: 409 }
+    )
+  }
+
   const { data, error } = await supabase
-    .from("products")
+    .from("categories")
     .update({
       name,
-      description,
-      image_url: imageUrl,
-      category_id: categoryId,
+      slug,
       is_active: isActive,
     })
     .eq("id", id)
-    .select(
-      `
-      id,
-      name,
-      description,
-      image_url,
-      is_active,
-      category_id,
-      categories ( name )
-    `
-    )
+    .select("id, name, slug, is_active")
     .single()
 
   if (error) {
@@ -132,20 +136,10 @@ export async function PATCH(req: Request) {
   }
 
   const { data, error } = await supabase
-    .from("products")
+    .from("categories")
     .update({ is_active: isActive })
     .eq("id", id)
-    .select(
-      `
-      id,
-      name,
-      description,
-      image_url,
-      is_active,
-      category_id,
-      categories ( name )
-    `
-    )
+    .select("id, name, slug, is_active")
     .single()
 
   if (error) {
@@ -164,7 +158,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "id é obrigatório." }, { status: 400 })
   }
 
-  const { error } = await supabase.from("products").delete().eq("id", id)
+  const { error } = await supabase.from("categories").delete().eq("id", id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -38,7 +38,7 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
     revenueToday,
     revenueWeek,
     revenueMonth,
-    activeUsers,
+    activeUsersOrders,
     lowStock,
   ] = await Promise.all([
     supabase
@@ -70,10 +70,12 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
       .gte("created_at", monthStart.toISOString()),
 
     supabase
-      .from("store_users")
-      .select("user_id, users!inner(id, status)", { count: "exact", head: true })
+      .from("orders")
+      .select("user_id")
       .eq("store_id", storeId)
-      .eq("users.status", "ativo"),
+      .eq("status", "processed")
+      .not("user_id", "is", null)
+      .gte("created_at", monthStart.toISOString()),
 
     supabase
       .from("product_stock")
@@ -197,6 +199,12 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
       }),
     })) ?? [];
 
+  const activeUsersCount = new Set(
+    (activeUsersOrders.data ?? [])
+      .map((row: any) => row.user_id)
+      .filter(Boolean)
+  ).size;
+
   return {
     metrics: {
       ordersToday: ordersToday.count ?? 0,
@@ -215,7 +223,7 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
           (sum: number, row: any) => sum + Number(row.total_amount),
           0
         ) ?? 0,
-      activeUsers: activeUsers.count ?? 0,
+      activeUsers: activeUsersCount,
       lowStock: lowStock.count ?? 0,
     },
     charts: {

@@ -69,7 +69,7 @@ export default function ProdutosPage() {
 
     const existingIds = products.map((p) => p.products.id);
     const filtered = (data || []).filter(
-      (p: any) => !existingIds.includes(p.id)
+      (p: any) => p.is_active && !existingIds.includes(p.id)
     );
 
     setGlobalProducts(filtered);

@@ -38,7 +38,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push("/dashboard")
+      router.push("/ambientes")
     } catch (err) {
       setError("Erro inesperado. Tente novamente.")
       setLoading(false)

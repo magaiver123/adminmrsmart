@@ -1,14 +1,15 @@
-type UserStatus = "ativo" | "bloqueado";
+type UserStatus = "ativo" | "bloqueado"
 
-export async function fetchUsersByStore(storeId: string) {
-  const res = await fetch(`/api/admin/users?store_id=${storeId}`);
+export async function fetchUsersGlobal(storeId?: string) {
+  const query = storeId ? `?store_id=${encodeURIComponent(storeId)}` : ""
+  const res = await fetch(`/api/admin/users${query}`)
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || "Erro ao buscar usuários.");
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || "Erro ao buscar usuários.")
   }
 
-  return res.json();
+  return res.json()
 }
 
 export async function updateUserStatus(userId: string, status: UserStatus) {
@@ -16,10 +17,10 @@ export async function updateUserStatus(userId: string, status: UserStatus) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: userId, status }),
-  });
+  })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || "Erro ao atualizar status do usuário.");
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error || "Erro ao atualizar status do usuário.")
   }
 }

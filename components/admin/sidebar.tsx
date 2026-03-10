@@ -1,25 +1,26 @@
-"use client"
+﻿"use client"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
 import {
-  MonitorSmartphone,
-  Store,
   LayoutDashboard,
+  MonitorSmartphone,
   Package,
   FolderOpen,
   Warehouse,
   Monitor,
-  Users,
   ShoppingCart,
-  Settings,
+  Store,
+  Users,
   UserCog,
+  Settings,
   FileText,
+  User,
+  Library,
   ChevronLeft,
   ChevronRight,
-  User,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,53 +32,65 @@ import {
 } from "@/components/ui/select"
 import { useStore } from "./store-context"
 import { useEffect, useState } from "react"
+import {
+  GLOBAL_MENU_ITEMS,
+  STORE_MENU_ITEMS,
+  getEnvironmentFromPathname,
+  getEnvironmentLabel,
+} from "./navigation"
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: (value: boolean) => void
 }
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/" },
-  { icon: Store, label: "Lojas", href: "/lojas" },
-  { icon: MonitorSmartphone, label: "Totens", href: "/totens" }, 
-  { icon: Package, label: "Produtos", href: "/produtos" },
-  { icon: FolderOpen, label: "Categorias", href: "/categorias" },
-  { icon: Warehouse, label: "Estoque", href: "/estoque" },
-  { icon: Monitor, label: "Tela Inicial", href: "/kiosk" },
-  { icon: Users, label: "Usuários", href: "/usuarios" },
-  { icon: ShoppingCart, label: "Pedidos", href: "/pedidos" },
-  { icon: Settings, label: "Configurações", href: "/configuracoes" },
-  { icon: UserCog, label: "Usuários Admin", href: "/admin-usuarios" },
-  { icon: FileText, label: "Logs / Auditoria", href: "/logs" },
-  { icon: User, label: "Meu Perfil", href: "/perfil" },
-]
-
-type Store = {
+type StoreType = {
   id: string
   name: string
   status: boolean
 }
 
+const iconByHref = {
+  "/dashboard": LayoutDashboard,
+  "/totens": MonitorSmartphone,
+  "/produtos": Package,
+  "/categorias": FolderOpen,
+  "/estoque": Warehouse,
+  "/kiosk": Monitor,
+  "/pedidos": ShoppingCart,
+  "/lojas": Store,
+  "/produtos-globais": Library,
+  "/categorias-globais": FolderOpen,
+  "/usuarios": Users,
+  "/admin-usuarios": UserCog,
+  "/configuracoes": Settings,
+  "/logs": FileText,
+  "/perfil": User,
+} as const
+
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
+  const environment = getEnvironmentFromPathname(pathname)
   const { store, setStore } = useStore()
-  const [stores, setStores] = useState<Store[]>([])
+  const [stores, setStores] = useState<StoreType[]>([])
+
+  const menuItems =
+    environment === "global" ? GLOBAL_MENU_ITEMS : STORE_MENU_ITEMS
 
   useEffect(() => {
+    if (environment !== "store") return
+
     async function loadStores() {
       const res = await fetch("/api/admin/stores")
       if (!res.ok) return
+
       const data = await res.json()
-
-      // 🔥 FILTRA APENAS LOJAS ATIVAS
-      const activeStores = data.filter((s: Store) => s.status === true)
-
+      const activeStores = data.filter((s: StoreType) => s.status === true)
       setStores(activeStores)
     }
 
     loadStores()
-  }, [])
+  }, [environment])
 
   return (
     <aside
@@ -86,7 +99,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Logo */}
       <div className="flex h-20 items-center justify-between border-b px-4">
         {!collapsed && (
           <div className="flex items-center gap-3">
@@ -99,9 +111,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             />
             <div className="flex flex-col leading-tight">
               <span className="text-xl font-bold">Mr Smart</span>
-              <span className="text-xs text-black/60">
-                Pegue, pague, pronto
-              </span>
+              <span className="text-xs text-black/60">Pegue, pague, pronto</span>
             </div>
           </div>
         )}
@@ -120,18 +130,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </Button>
       </div>
 
-      {/* Loja ativa */}
       {!collapsed && (
+        <div className="border-b px-4 py-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-black/50">
+            {getEnvironmentLabel(environment)}
+          </p>
+        </div>
+      )}
+
+      {!collapsed && environment === "store" && (
         <div className="border-b px-4 py-3">
-          <span className="text-xs text-black/60 block mb-1">
-            Loja ativa
-          </span>
+          <span className="text-xs text-black/60 block mb-1">Loja ativa</span>
 
           <Select
             value={store?.id ?? ""}
             onValueChange={(value) => {
-              const selected =
-                stores.find((s) => s.id === value) || null
+              const selected = stores.find((s) => s.id === value) || null
               setStore(selected)
             }}
           >
@@ -150,10 +164,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
       )}
 
-      {/* Menu */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`)
+          const Icon = iconByHref[item.href as keyof typeof iconByHref]
+
           return (
             <Link
               key={item.href}
@@ -166,7 +182,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 collapsed && "justify-center px-2"
               )}
             >
-              <item.icon className="h-5 w-5 shrink-0" />
+              <Icon className="h-5 w-5 shrink-0" />
               {!collapsed && <span>{item.label}</span>}
             </Link>
           )
@@ -175,9 +191,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {!collapsed && (
         <div className="border-t p-4">
-          <p className="text-xs text-black/60">
-            Kiosk Admin v1.0
-          </p>
+          <p className="text-xs text-black/60">Kiosk Admin v1.0</p>
         </div>
       )}
     </aside>
