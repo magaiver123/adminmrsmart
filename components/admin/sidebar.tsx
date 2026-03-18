@@ -57,6 +57,7 @@ const iconByHref = {
   "/categorias": FolderOpen,
   "/estoque": Warehouse,
   "/kiosk": Monitor,
+  "/menu-banner": Monitor,
   "/pedidos": ShoppingCart,
   "/lojas": Store,
   "/produtos-globais": Library,
@@ -197,3 +198,4 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     </aside>
   )
 }
+

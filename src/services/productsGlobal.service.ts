@@ -33,6 +33,24 @@ export async function createGlobalProduct(input: ProductGlobalInput) {
   }
 }
 
+export async function uploadGlobalProductImage(file: File) {
+  const formData = new FormData()
+  formData.append("file", file)
+
+  const res = await fetch("/api/admin/products-global/upload-image", {
+    method: "POST",
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(getErrorMessage(body, "Erro ao fazer upload da imagem."))
+  }
+
+  const body = await res.json()
+  return String(body?.image_url ?? "")
+}
+
 export async function updateGlobalProduct(input: ProductGlobalInput & { id: string }) {
   const res = await fetch("/api/admin/products-global", {
     method: "PUT",
