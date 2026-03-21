@@ -5,7 +5,7 @@ import { AdminLayout } from "@/components/admin/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -40,6 +40,7 @@ import {
   deleteTotemApi,
   fetchTotems,
   updateTotemApi,
+  updateTotemRuntimeApi,
 } from "@/src/services/totems.service";
 import { useStore } from "@/components/admin/store-context";
 
@@ -48,6 +49,7 @@ type Totem = {
   name: string;
   activation_code: string;
   status: "active" | "inactive";
+  maintenance_mode: boolean;
   store_id: string;
   store_name: string;
 };
@@ -77,7 +79,7 @@ function TotemForm({
       </div>
 
       <div className="space-y-2">
-        <Label>Codigo de Ativação</Label>
+        <Label>Codigo de Ativacao</Label>
         <Input
           value={form.activationCode}
           onChange={(e) =>
@@ -96,6 +98,10 @@ export default function TotensPage() {
   const { store } = useStore();
   const [totens, setTotens] = useState<Totem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [runtimeUpdatingId, setRuntimeUpdatingId] = useState<string | null>(
+    null
+  );
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -113,13 +119,26 @@ export default function TotensPage() {
     }
 
     setLoading(true);
-    const totensData = await fetchTotems(store.id);
-    setTotens(totensData as Totem[]);
-    setLoading(false);
+    try {
+      const totemsData = await fetchTotems(store.id);
+      setTotens(
+        (totemsData as any[]).map((totem) => ({
+          ...totem,
+          maintenance_mode: Boolean(totem.maintenance_mode),
+        }))
+      );
+      setRuntimeError(null);
+    } catch (error: any) {
+      setRuntimeError(error?.message || "Erro ao carregar totems.");
+      setTotens([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store?.id]);
 
   if (!store) {
@@ -197,12 +216,63 @@ export default function TotensPage() {
     loadData();
   };
 
+  const isRuntimeUpdating = (totemId: string) => runtimeUpdatingId === totemId;
+
+  const toggleTotemStatus = async (totem: Totem) => {
+    if (!store?.id) return;
+
+    setRuntimeError(null);
+    setRuntimeUpdatingId(totem.id);
+
+    try {
+      const nextStatus = totem.status === "active" ? "inactive" : "active";
+      const result = await updateTotemRuntimeApi({
+        id: totem.id,
+        store_id: store.id,
+        status: nextStatus,
+      });
+
+      if (result?.error) {
+        setRuntimeError(result.error);
+        return;
+      }
+
+      await loadData();
+    } finally {
+      setRuntimeUpdatingId(null);
+    }
+  };
+
+  const toggleMaintenanceMode = async (totem: Totem) => {
+    if (!store?.id) return;
+
+    setRuntimeError(null);
+    setRuntimeUpdatingId(totem.id);
+
+    try {
+      const result = await updateTotemRuntimeApi({
+        id: totem.id,
+        store_id: store.id,
+        maintenance_mode: !totem.maintenance_mode,
+      });
+
+      if (result?.error) {
+        setRuntimeError(result.error);
+        return;
+      }
+
+      await loadData();
+    } finally {
+      setRuntimeUpdatingId(null);
+    }
+  };
+
   return (
     <AdminLayout title="Totens">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground">
-            Gerencie os totens de autoatendimento vinculados às lojas.
+            Gerencie os totens de autoatendimento vinculados as lojas.
           </p>
 
           <Dialog
@@ -230,13 +300,10 @@ export default function TotensPage() {
 
               <TotemForm form={form} setForm={setForm} />
               {formError && (
-                <p className="text-sm text-red-600 font-medium">{formError}</p>
+                <p className="text-sm font-medium text-red-600">{formError}</p>
               )}
               <div className="flex justify-end gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsCreateOpen(false)}
-                >
+                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
                   Cancelar
                 </Button>
                 <Button
@@ -265,7 +332,8 @@ export default function TotensPage() {
                     <TableHead>Loja Vinculada</TableHead>
                     <TableHead>Codigo</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                    <TableHead>Modo Manutencao</TableHead>
+                    <TableHead className="text-right">Acoes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -275,7 +343,12 @@ export default function TotensPage() {
                       <TableCell>{totem.store_name}</TableCell>
                       <TableCell>{totem.activation_code}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={totem.status === "active"}
+                            onCheckedChange={() => toggleTotemStatus(totem)}
+                            disabled={isRuntimeUpdating(totem.id)}
+                          />
                           <span
                             className={`text-sm font-medium ${
                               totem.status === "active"
@@ -287,12 +360,31 @@ export default function TotensPage() {
                           </span>
                         </div>
                       </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={totem.maintenance_mode}
+                            onCheckedChange={() => toggleMaintenanceMode(totem)}
+                            disabled={isRuntimeUpdating(totem.id)}
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              totem.maintenance_mode
+                                ? "text-amber-600"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {totem.maintenance_mode ? "Em manutencao" : "Normal"}
+                          </span>
+                        </div>
+                      </TableCell>
 
-                      <TableCell className="text-right space-x-2">
+                      <TableCell className="space-x-2 text-right">
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => openEdit(totem)}
+                          disabled={isRuntimeUpdating(totem.id)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -300,6 +392,7 @@ export default function TotensPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => openDelete(totem)}
+                          disabled={isRuntimeUpdating(totem.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -309,17 +402,19 @@ export default function TotensPage() {
                 </TableBody>
               </Table>
             )}
+            {runtimeError && (
+              <p className="mt-4 text-sm font-medium text-red-600">
+                {runtimeError}
+              </p>
+            )}
           </CardContent>
         </Card>
 
-        {/* MODAL EDITAR */}
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Editar Nome do Totem</DialogTitle>
-              <DialogDescription>
-                Apenas o nome pode ser alterado.
-              </DialogDescription>
+              <DialogDescription>Apenas o nome pode ser alterado.</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-2">
@@ -332,9 +427,8 @@ export default function TotensPage() {
               />
 
               {formError && (
-                <p className="text-sm text-red-600 font-medium">{formError}</p>
+                <p className="text-sm font-medium text-red-600">{formError}</p>
               )}
-              
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
@@ -346,7 +440,6 @@ export default function TotensPage() {
           </DialogContent>
         </Dialog>
 
-        {/* MODAL DELETE */}
         <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -358,9 +451,7 @@ export default function TotensPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete}>
-                Excluir
-              </AlertDialogAction>
+              <AlertDialogAction onClick={handleDelete}>Excluir</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

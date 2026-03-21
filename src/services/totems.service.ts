@@ -33,6 +33,20 @@ export async function updateTotemApi(input: {
   return res.json();
 }
 
+export async function updateTotemRuntimeApi(input: {
+  id: string;
+  store_id: string;
+  status?: "active" | "inactive";
+  maintenance_mode?: boolean;
+}) {
+  const res = await fetch("/api/admin/totems", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
 export async function deleteTotemApi(id: string, storeId: string) {
   const res = await fetch(`/api/admin/totems?id=${id}&store_id=${storeId}`, {
     method: "DELETE",

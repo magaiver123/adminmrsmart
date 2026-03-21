@@ -14,26 +14,48 @@ const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/webp": "webp",
 }
 
+async function normalizeOrder(supabase: any, storeId: string) {
+  const { data: activeBanners, error } = await supabase
+    .from("menu_banners")
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("active", true)
+    .order("order", { ascending: true })
+
+  if (error || !activeBanners) return
+
+  for (let i = 0; i < activeBanners.length; i++) {
+    await supabase
+      .from("menu_banners")
+      .update({ order: i + 1 })
+      .eq("id", activeBanners[i].id)
+      .eq("store_id", storeId)
+  }
+}
+
 export async function GET(req: Request) {
   const supabase = await createSupabaseServerClient()
   const { searchParams } = new URL(req.url)
   const storeId = searchParams.get("store_id")
 
   if (!storeId) {
-    return NextResponse.json({ error: "store_id e obrigatorio." }, { status: 400 })
+    return NextResponse.json(
+      { error: "store_id e obrigatorio." },
+      { status: 400 },
+    )
   }
 
   const { data, error } = await supabase
     .from("menu_banners")
-    .select("image_url")
+    .select("*")
     .eq("store_id", storeId)
-    .maybeSingle()
+    .order("order", { ascending: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ image_url: data?.image_url ?? null })
+  return NextResponse.json(data ?? [])
 }
 
 export async function POST(req: Request) {
@@ -41,6 +63,8 @@ export async function POST(req: Request) {
   const formData = await req.formData()
 
   const storeId = String(formData.get("store_id") ?? "")
+  const duration = Number(formData.get("duration") ?? 5)
+  const active = String(formData.get("active") ?? "true") === "true"
   const file = formData.get("file")
 
   if (!storeId || !(file instanceof File)) {
@@ -90,41 +114,110 @@ export async function POST(req: Request) {
     )
   }
 
-  const { error: upsertError } = await supabase
-    .from("menu_banners")
-    .upsert(
-      {
-        store_id: storeId,
-        image_url: publicData.publicUrl,
-      },
-      { onConflict: "store_id" },
-    )
+  const { error: insertError } = await supabase.from("menu_banners").insert({
+    image_url: publicData.publicUrl,
+    duration,
+    active,
+    order: active ? 9999 : 0,
+    store_id: storeId,
+  })
 
-  if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 })
+  if (insertError) {
+    return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
-  return NextResponse.json({ image_url: publicData.publicUrl })
+  await normalizeOrder(supabase, storeId)
+  return NextResponse.json({ success: true })
+}
+
+export async function PATCH(req: Request) {
+  const supabase = await createSupabaseServerClient()
+  const body = await req.json()
+  const action = body?.action as string | undefined
+  const storeId = body?.store_id as string | undefined
+
+  if (!action || !storeId) {
+    return NextResponse.json(
+      { error: "action e store_id sao obrigatorios." },
+      { status: 400 },
+    )
+  }
+
+  if (action === "reorder") {
+    const orderedIds = body?.ordered_ids as string[] | undefined
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      return NextResponse.json(
+        { error: "ordered_ids e obrigatorio." },
+        { status: 400 },
+      )
+    }
+
+    for (let i = 0; i < orderedIds.length; i++) {
+      await supabase
+        .from("menu_banners")
+        .update({ order: i + 1 })
+        .eq("id", orderedIds[i])
+        .eq("store_id", storeId)
+    }
+
+    await normalizeOrder(supabase, storeId)
+    return NextResponse.json({ success: true })
+  }
+
+  if (action === "toggle") {
+    const id = body?.id as string | undefined
+    const active = body?.active as boolean | undefined
+
+    if (!id || typeof active !== "boolean") {
+      return NextResponse.json(
+        { error: "id e active sao obrigatorios." },
+        { status: 400 },
+      )
+    }
+
+    const { error } = await supabase
+      .from("menu_banners")
+      .update({
+        active,
+        order: active ? 9999 : 0,
+      })
+      .eq("id", id)
+      .eq("store_id", storeId)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await normalizeOrder(supabase, storeId)
+    return NextResponse.json({ success: true })
+  }
+
+  return NextResponse.json({ error: "Acao invalida." }, { status: 400 })
 }
 
 export async function DELETE(req: Request) {
   const supabase = await createSupabaseServerClient()
   const { searchParams } = new URL(req.url)
+  const id = searchParams.get("id")
   const storeId = searchParams.get("store_id")
 
-  if (!storeId) {
-    return NextResponse.json({ error: "store_id e obrigatorio." }, { status: 400 })
+  if (!id || !storeId) {
+    return NextResponse.json(
+      { error: "id e store_id sao obrigatorios." },
+      { status: 400 },
+    )
   }
 
   const { error } = await supabase
     .from("menu_banners")
     .delete()
+    .eq("id", id)
     .eq("store_id", storeId)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  await normalizeOrder(supabase, storeId)
   return NextResponse.json({ success: true })
 }
-

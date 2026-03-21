@@ -8,7 +8,7 @@ export async function GET(req: Request) {
 
   if (!storeId) {
     return NextResponse.json(
-      { error: "store_id é obrigatório." },
+      { error: "store_id e obrigatorio." },
       { status: 400 }
     );
   }
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
   if (!name || !storeId || !activationCode) {
     return NextResponse.json(
-      { error: "Todos os campos são obrigatórios." },
+      { error: "Todos os campos sao obrigatorios." },
       { status: 400 }
     );
   }
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   const codePattern = /^T-\d{6}$/;
   if (!codePattern.test(activationCode)) {
     return NextResponse.json(
-      { error: "O código deve estar no formato T-123456." },
+      { error: "O codigo deve estar no formato T-123456." },
       { status: 400 }
     );
   }
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
   if (existingCode) {
     return NextResponse.json(
-      { error: "Já existe um totem com esse código cadastrado." },
+      { error: "Ja existe um totem com esse codigo cadastrado." },
       { status: 409 }
     );
   }
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
 
   if (existingName) {
     return NextResponse.json(
-      { error: "Já existe um totem com esse nome nesta loja." },
+      { error: "Ja existe um totem com esse nome nesta loja." },
       { status: 409 }
     );
   }
@@ -119,7 +119,7 @@ export async function PUT(req: Request) {
 
   if (!id || !name || !storeId) {
     return NextResponse.json(
-      { error: "id, store_id e name são obrigatórios." },
+      { error: "id, store_id e name sao obrigatorios." },
       { status: 400 }
     );
   }
@@ -134,7 +134,7 @@ export async function PUT(req: Request) {
 
   if (existingName) {
     return NextResponse.json(
-      { error: "Já existe um totem com esse nome nesta loja." },
+      { error: "Ja existe um totem com esse nome nesta loja." },
       { status: 409 }
     );
   }
@@ -162,17 +162,51 @@ export async function PATCH(req: Request) {
   const id = String(body?.id ?? "");
   const storeId = String(body?.store_id ?? "");
   const status = body?.status as "active" | "inactive" | undefined;
+  const maintenanceMode = body?.maintenance_mode as boolean | undefined;
 
-  if (!id || !storeId || (status !== "active" && status !== "inactive")) {
+  if (!id || !storeId) {
     return NextResponse.json(
-      { error: "id, store_id e status válidos são obrigatórios." },
+      { error: "id e store_id sao obrigatorios." },
       { status: 400 }
     );
   }
 
+  if (status !== undefined && status !== "active" && status !== "inactive") {
+    return NextResponse.json(
+      { error: "status deve ser active ou inactive." },
+      { status: 400 }
+    );
+  }
+
+  if (maintenanceMode !== undefined && typeof maintenanceMode !== "boolean") {
+    return NextResponse.json(
+      { error: "maintenance_mode deve ser boolean." },
+      { status: 400 }
+    );
+  }
+
+  if (status === undefined && maintenanceMode === undefined) {
+    return NextResponse.json(
+      { error: "Informe ao menos um campo para atualizacao." },
+      { status: 400 }
+    );
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (status !== undefined) {
+    updatePayload.status = status;
+  }
+
+  if (maintenanceMode !== undefined) {
+    updatePayload.maintenance_mode = maintenanceMode;
+  }
+
   const { error } = await supabase
     .from("totems")
-    .update({ status })
+    .update(updatePayload)
     .eq("id", id)
     .eq("store_id", storeId);
 
@@ -191,7 +225,7 @@ export async function DELETE(req: Request) {
 
   if (!id || !storeId) {
     return NextResponse.json(
-      { error: "id e store_id são obrigatórios." },
+      { error: "id e store_id sao obrigatorios." },
       { status: 400 }
     );
   }

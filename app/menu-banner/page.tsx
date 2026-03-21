@@ -1,163 +1,199 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useState } from "react"
+import Image from "next/image"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useStore } from "@/components/admin/store-context"
-import { ImageIcon } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
 import {
-  deleteMenuBanner,
-  fetchMenuBanner,
-  uploadMenuBanner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Plus, Trash2, GripVertical } from "lucide-react"
+import { useStore } from "@/components/admin/store-context"
+import {
+  createMenuBannerSlide,
+  deleteMenuBannerSlide,
+  fetchMenuBannerSlides,
+  reorderMenuBannerSlides,
+  toggleMenuBannerSlide,
 } from "@/src/services/menuBanner.service"
 
-const ACCEPTED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-])
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
 
-function revokeObjectUrl(url: string) {
-  if (url.startsWith("blob:")) {
-    URL.revokeObjectURL(url)
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable"
+
+import { CSS } from "@dnd-kit/utilities"
+
+type MenuBannerSlide = {
+  id: string
+  image_url: string
+  order: number
+  duration: number
+  active: boolean
+}
+
+function SortableRow({
+  slide,
+  children,
+}: {
+  slide: MenuBannerSlide
+  children: React.ReactNode
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({
+    id: slide.id,
+    disabled: !slide.active,
+  })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
   }
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={!slide.active ? "opacity-50" : ""}
+    >
+      <TableCell className="w-6">
+        {slide.active && (
+          <span {...attributes} {...listeners} className="cursor-grab">
+            <GripVertical className="h-4 w-4 text-muted-foreground" />
+          </span>
+        )}
+      </TableCell>
+      {children}
+    </TableRow>
+  )
 }
 
 export default function MenuBannerPage() {
   const { store } = useStore()
+  const [slides, setSlides] = useState<MenuBannerSlide[]>([])
+  const [open, setOpen] = useState(false)
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState("")
-  const [currentBannerUrl, setCurrentBannerUrl] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [removing, setRemoving] = useState(false)
-  const [message, setMessage] = useState("")
-  const [error, setError] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const [duration, setDuration] = useState(5)
+  const [active, setActive] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-
-  const previewToRender = useMemo(
-    () => previewUrl || currentBannerUrl,
-    [previewUrl, currentBannerUrl],
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
   )
 
-  function clearTransientState() {
-    setMessage("")
-    setError("")
-  }
-
-  function resetFileSelection() {
-    setSelectedFile(null)
-    setPreviewUrl((previousUrl) => {
-      revokeObjectUrl(previousUrl)
-      return ""
-    })
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
+  async function loadSlides() {
+    if (!store?.id) {
+      setSlides([])
+      return
     }
+
+    const data = await fetchMenuBannerSlides(store.id)
+    setSlides(data || [])
   }
 
   useEffect(() => {
-    return () => {
-      revokeObjectUrl(previewUrl)
-    }
-  }, [previewUrl])
-
-  useEffect(() => {
-    async function loadBanner() {
-      if (!store?.id) {
-        setCurrentBannerUrl("")
-        resetFileSelection()
-        clearTransientState()
-        return
-      }
-
-      setLoading(true)
-      clearTransientState()
-
-      try {
-        const imageUrl = await fetchMenuBanner(store.id)
-        setCurrentBannerUrl(imageUrl)
-      } catch (loadError) {
-        setCurrentBannerUrl("")
-        setError(loadError instanceof Error ? loadError.message : "Erro ao carregar banner.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadBanner()
+    loadSlides()
   }, [store?.id])
 
-  function handleFileSelection(file: File | null) {
-    if (!file) return
+  async function handleDragEnd(event: any) {
+    if (!store?.id) return
 
-    clearTransientState()
+    const { active, over } = event
+    if (!over || active.id === over.id) return
 
-    if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
-      setError("Formato invalido. Use JPG, PNG ou WEBP.")
-      return
-    }
+    const activeSlides = slides.filter((s) => s.active)
+    const oldIndex = activeSlides.findIndex((s) => s.id === active.id)
+    const newIndex = activeSlides.findIndex((s) => s.id === over.id)
 
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      setError("A imagem deve ter no maximo 5MB.")
-      return
-    }
+    const reordered = arrayMove(activeSlides, oldIndex, newIndex)
 
-    setSelectedFile(file)
-    setPreviewUrl((previousUrl) => {
-      revokeObjectUrl(previousUrl)
-      return URL.createObjectURL(file)
-    })
+    await reorderMenuBannerSlides(
+      store.id,
+      reordered.map((slide) => slide.id)
+    )
+
+    await loadSlides()
   }
 
-  async function handleSave() {
-    if (!store?.id || !selectedFile || saving) return
+  async function handleCreate() {
+    if (!file || isSaving || !store?.id) return
 
-    setSaving(true)
-    clearTransientState()
+    setIsSaving(true)
 
     try {
-      const imageUrl = await uploadMenuBanner(store.id, selectedFile)
-      setCurrentBannerUrl(imageUrl)
-      resetFileSelection()
-      setMessage("Banner salvo com sucesso.")
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Erro ao salvar banner.")
+      await createMenuBannerSlide({
+        storeId: store.id,
+        file,
+        duration,
+        active,
+      })
+
+      setOpen(false)
+      setFile(null)
+      setDuration(5)
+      setActive(true)
+
+      await loadSlides()
     } finally {
-      setSaving(false)
+      setIsSaving(false)
     }
   }
 
-  async function handleRemove() {
-    if (!store?.id || !currentBannerUrl || removing) return
+  async function toggleActive(slide: MenuBannerSlide) {
+    if (!store?.id) return
 
-    setRemoving(true)
-    clearTransientState()
-
-    try {
-      await deleteMenuBanner(store.id)
-      setCurrentBannerUrl("")
-      resetFileSelection()
-      setMessage("Banner removido com sucesso.")
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Erro ao remover banner.")
-    } finally {
-      setRemoving(false)
-    }
+    await toggleMenuBannerSlide(store.id, slide.id, !slide.active)
+    await loadSlides()
   }
+
+  async function handleDelete(id: string) {
+    if (!store?.id) return
+
+    await deleteMenuBannerSlide(store.id, id)
+    await loadSlides()
+  }
+
+  const activeIds = slides.filter((s) => s.active).map((s) => s.id)
 
   if (!store) {
     return (
       <AdminLayout title="Banner do Menu">
         <p className="text-muted-foreground">
-          Selecione uma loja para gerenciar o banner do menu.
+          Selecione uma loja para gerenciar os banners do menu.
         </p>
       </AdminLayout>
     )
@@ -166,86 +202,131 @@ export default function MenuBannerPage() {
   return (
     <AdminLayout title="Banner do Menu">
       <div className="space-y-6">
-        <p className="text-muted-foreground">
-          Gerencie o banner exibido no topo do menu do totem para a loja selecionada.
-        </p>
+        <div className="flex justify-between items-center">
+          <p className="text-muted-foreground">
+            Gerencie os slides do banner do menu (rotacao por ordem e duracao).
+          </p>
+
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Banner
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Novo Banner do Menu</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <Label>Imagem</Label>
+                <Input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                />
+
+                <p className="text-xs text-muted-foreground">
+                  Canva recomendado: 2000 x 400 px (5:1). Formatos: JPG, PNG, WEBP.
+                </p>
+
+                <Label>Duracao (segundos)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={duration}
+                  onChange={(e) => setDuration(Math.max(1, +e.target.value || 1))}
+                />
+
+                <div className="flex items-center gap-2">
+                  <Switch checked={active} onCheckedChange={setActive} />
+                  <span>Ativo</span>
+                </div>
+
+                <Button
+                  onClick={handleCreate}
+                  className="w-full"
+                  disabled={isSaving}
+                >
+                  {isSaving ? "Salvando..." : "Salvar Banner"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Banner do topo do menu</CardTitle>
+            <CardTitle>Banners do Menu</CardTitle>
           </CardHeader>
 
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Pre-visualizacao (proporcao 5:1)</Label>
-
-              <div className="relative w-full overflow-hidden rounded-xl border bg-muted aspect-[5/1]">
-                {loading ? (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                    Carregando banner...
-                  </div>
-                ) : previewToRender ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={previewToRender}
-                    alt="Preview do banner do menu"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <ImageIcon className="h-4 w-4" />
-                    Nenhum banner cadastrado
-                  </div>
-                )}
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Canva recomendado: 2000 x 400 px (PNG). Area exibida no totem: 800 x 160 px.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Nova imagem</Label>
-              <Input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(event) => handleFileSelection(event.target.files?.[0] || null)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Formatos aceitos: JPG, PNG e WEBP. Tamanho maximo: 5MB.
-              </p>
-            </div>
-
-            {error && (
-              <p className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
-              </p>
-            )}
-
-            {message && (
-              <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {message}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={handleSave} disabled={!selectedFile || saving}>
-                {saving ? "Salvando..." : "Salvar banner"}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleRemove}
-                disabled={!currentBannerUrl || removing}
+          <CardContent>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={activeIds}
+                strategy={verticalListSortingStrategy}
               >
-                {removing ? "Removendo..." : "Remover banner"}
-              </Button>
-            </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead />
+                      <TableHead>Ordem</TableHead>
+                      <TableHead>Preview</TableHead>
+                      <TableHead>Duracao</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Acoes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+
+                  <TableBody>
+                    {slides.map((slide) => (
+                      <SortableRow key={slide.id} slide={slide}>
+                        <TableCell>{slide.active ? slide.order : "-"}</TableCell>
+
+                        <TableCell>
+                          <div className="relative h-12 w-28 overflow-hidden rounded-md border">
+                            <Image
+                              src={slide.image_url}
+                              alt="Preview banner menu"
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                        </TableCell>
+
+                        <TableCell>{slide.duration}s</TableCell>
+
+                        <TableCell>
+                          <Switch
+                            checked={slide.active}
+                            onCheckedChange={() => toggleActive(slide)}
+                          />
+                        </TableCell>
+
+                        <TableCell className="text-right">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDelete(slide.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </SortableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </SortableContext>
+            </DndContext>
           </CardContent>
         </Card>
       </div>
     </AdminLayout>
   )
 }
-
