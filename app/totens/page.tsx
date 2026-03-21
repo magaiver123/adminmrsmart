@@ -218,31 +218,6 @@ export default function TotensPage() {
 
   const isRuntimeUpdating = (totemId: string) => runtimeUpdatingId === totemId;
 
-  const toggleTotemStatus = async (totem: Totem) => {
-    if (!store?.id) return;
-
-    setRuntimeError(null);
-    setRuntimeUpdatingId(totem.id);
-
-    try {
-      const nextStatus = totem.status === "active" ? "inactive" : "active";
-      const result = await updateTotemRuntimeApi({
-        id: totem.id,
-        store_id: store.id,
-        status: nextStatus,
-      });
-
-      if (result?.error) {
-        setRuntimeError(result.error);
-        return;
-      }
-
-      await loadData();
-    } finally {
-      setRuntimeUpdatingId(null);
-    }
-  };
-
   const toggleMaintenanceMode = async (totem: Totem) => {
     if (!store?.id) return;
 
@@ -343,39 +318,23 @@ export default function TotensPage() {
                       <TableCell>{totem.store_name}</TableCell>
                       <TableCell>{totem.activation_code}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Switch
-                            checked={totem.status === "active"}
-                            onCheckedChange={() => toggleTotemStatus(totem)}
-                            disabled={isRuntimeUpdating(totem.id)}
-                          />
-                          <span
-                            className={`text-sm font-medium ${
-                              totem.status === "active"
-                                ? "text-green-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            {totem.status === "active" ? "Ativo" : "Inativo"}
-                          </span>
-                        </div>
+                        <span
+                          className={`text-sm font-medium ${
+                            totem.status === "active"
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {totem.status === "active" ? "Ativo" : "Inativo"}
+                        </span>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center">
                           <Switch
                             checked={totem.maintenance_mode}
                             onCheckedChange={() => toggleMaintenanceMode(totem)}
                             disabled={isRuntimeUpdating(totem.id)}
                           />
-                          <span
-                            className={`text-sm font-medium ${
-                              totem.maintenance_mode
-                                ? "text-amber-600"
-                                : "text-muted-foreground"
-                            }`}
-                          >
-                            {totem.maintenance_mode ? "Em manutencao" : "Normal"}
-                          </span>
                         </div>
                       </TableCell>
 
