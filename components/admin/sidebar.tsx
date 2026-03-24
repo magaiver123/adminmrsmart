@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
   MonitorSmartphone,
+  Printer,
   Package,
   FolderOpen,
   Warehouse,
@@ -53,6 +54,8 @@ type StoreType = {
 const iconByHref = {
   "/dashboard": LayoutDashboard,
   "/totens": MonitorSmartphone,
+  "/impressoras": Printer,
+  "/impressoras-global": Printer,
   "/produtos": Package,
   "/categorias": FolderOpen,
   "/estoque": Warehouse,

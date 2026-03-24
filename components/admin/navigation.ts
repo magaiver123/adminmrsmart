@@ -8,6 +8,7 @@ export type AdminMenuItem = {
 export const STORE_MENU_ITEMS: AdminMenuItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Totens", href: "/totens" },
+  { label: "Impressoras", href: "/impressoras" },
   { label: "Produtos", href: "/produtos" },
   { label: "Categorias", href: "/categorias" },
   { label: "Estoque", href: "/estoque" },
@@ -18,6 +19,7 @@ export const STORE_MENU_ITEMS: AdminMenuItem[] = [
 
 export const GLOBAL_MENU_ITEMS: AdminMenuItem[] = [
   { label: "Lojas", href: "/lojas" },
+  { label: "Impressoras Global", href: "/impressoras-global" },
   { label: "Produtos Globais", href: "/produtos-globais" },
   { label: "Categorias Globais", href: "/categorias-globais" },
   { label: "Usuários", href: "/usuarios" },
