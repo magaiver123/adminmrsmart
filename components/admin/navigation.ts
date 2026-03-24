@@ -20,6 +20,7 @@ export const STORE_MENU_ITEMS: AdminMenuItem[] = [
 export const GLOBAL_MENU_ITEMS: AdminMenuItem[] = [
   { label: "Lojas", href: "/lojas" },
   { label: "Impressoras Global", href: "/impressoras-global" },
+  { label: "Print Agents", href: "/print-agents" },
   { label: "Produtos Globais", href: "/produtos-globais" },
   { label: "Categorias Globais", href: "/categorias-globais" },
   { label: "Usuários", href: "/usuarios" },

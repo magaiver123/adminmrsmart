@@ -56,6 +56,7 @@ const iconByHref = {
   "/totens": MonitorSmartphone,
   "/impressoras": Printer,
   "/impressoras-global": Printer,
+  "/print-agents": MonitorSmartphone,
   "/produtos": Package,
   "/categorias": FolderOpen,
   "/estoque": Warehouse,
