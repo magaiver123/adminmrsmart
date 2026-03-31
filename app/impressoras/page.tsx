@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { AdminLayout } from "@/components/admin/admin-layout";
@@ -189,16 +189,6 @@ function jobStatusBadge(status: string) {
   return <Badge variant="outline">{status || "Desconhecido"}</Badge>;
 }
 
-function healthBadge(status: string | undefined) {
-  if (status === "online") return <Badge className="bg-green-600">Online</Badge>;
-  if (status === "offline") return <Badge variant="secondary">Offline</Badge>;
-  if (status === "degraded") return <Badge className="bg-yellow-600">Instável</Badge>;
-  if (status === "failed") return <Badge variant="destructive">Falhou</Badge>;
-  if (status === "no_printer") return <Badge className="bg-slate-600">Sem impressora</Badge>;
-  if (status === "maintenance") return <Badge className="bg-amber-700">Manutenção</Badge>;
-  if (status === "disabled") return <Badge variant="outline">Desativada</Badge>;
-  return <Badge variant="outline">Desconhecido</Badge>;
-}
 
 function getTotemPrimaryStatus(recentJobs: PrintJob[]): TotemPrimaryStatus {
   if (recentJobs.length === 0) return "no_history";
@@ -698,20 +688,7 @@ export default function ImpressorasPage() {
                         </summary>
 
                         <div className="mt-3 space-y-3">
-                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                            <div className="space-y-1">
-                              <Label>Perfil ESC/POS</Label>
-                              <Input
-                                value={draft.escpos_profile}
-                                placeholder={defaults.default_escpos_profile}
-                                onChange={(event) =>
-                                  updateDraft(totem.id, {
-                                    escpos_profile: event.target.value,
-                                  })
-                                }
-                              />
-                            </div>
-
+                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                             <div className="space-y-1">
                               <Label>Largura</Label>
                               <Select
@@ -742,13 +719,6 @@ export default function ImpressorasPage() {
                             </div>
 
                             <div className="space-y-1">
-                              <Label>Heartbeat</Label>
-                              <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                                {formatDateTime(totem.printer?.last_heartbeat_at)}
-                              </p>
-                            </div>
-
-                            <div className="space-y-1">
                               <Label>Fila</Label>
                               <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
                                 pendentes: {totem.pending_jobs ?? 0} | falhas: {totem.failed_jobs ?? 0}
@@ -757,7 +727,7 @@ export default function ImpressorasPage() {
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {healthBadge(totem.health_status)}
+                            {primaryStatusBadge(primaryStatus)}
                             <span>Última impressão: {formatDateTime(lastPrinted)}</span>
                           </div>
 
@@ -876,3 +846,6 @@ export default function ImpressorasPage() {
     </AdminLayout>
   );
 }
+
+
+
