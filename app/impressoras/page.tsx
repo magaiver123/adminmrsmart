@@ -688,29 +688,7 @@ export default function ImpressorasPage() {
                         </summary>
 
                         <div className="mt-3 space-y-3">
-                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            <div className="space-y-1">
-                              <Label>Largura</Label>
-                              <Select
-                                value={draft.paper_width_mm}
-                                onValueChange={(value) =>
-                                  updateDraft(totem.id, {
-                                    paper_width_mm: value as Draft["paper_width_mm"],
-                                  })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="58">58 mm</SelectItem>
-                                  <SelectItem value="76">76 mm</SelectItem>
-                                  <SelectItem value="80">80 mm</SelectItem>
-                                  <SelectItem value="82">82 mm</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-
+                          <div className="grid gap-3 md:grid-cols-2">
                             <div className="space-y-1">
                               <Label>Device</Label>
                               <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
@@ -727,7 +705,6 @@ export default function ImpressorasPage() {
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            {primaryStatusBadge(primaryStatus)}
                             <span>Última impressão: {formatDateTime(lastPrinted)}</span>
                           </div>
 
