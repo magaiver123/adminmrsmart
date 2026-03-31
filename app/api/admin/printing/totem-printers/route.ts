@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { backendErrorResponse, callPrintingBackend } from "../_proxy";
 
+function mapPrinterToSnake(printer: any) {
+  if (!printer) return null;
+
+  return {
+    ...printer,
+    brand: printer?.brand ?? null,
+    ip: printer?.ip ?? null,
+    port: printer?.port ?? null,
+    model: printer?.model ?? null,
+    escpos_profile: printer?.escpos_profile ?? printer?.escposProfile ?? null,
+    paper_width_mm: printer?.paper_width_mm ?? printer?.paperWidthMm ?? null,
+    is_active: printer?.is_active ?? printer?.isActive ?? false,
+    last_heartbeat_at:
+      printer?.last_heartbeat_at ?? printer?.lastHeartbeatAt ?? null,
+    last_status: printer?.last_status ?? printer?.lastStatus ?? null,
+    last_error: printer?.last_error ?? printer?.lastError ?? null,
+    agent_version: printer?.agent_version ?? printer?.agentVersion ?? null,
+  };
+}
+
 function mapTotemToSnake(totem: any) {
   return {
     id: totem?.id,
@@ -11,7 +31,7 @@ function mapTotemToSnake(totem: any) {
     health_status: totem?.healthStatus ?? "unknown",
     pending_jobs: Number(totem?.pendingJobs ?? 0),
     failed_jobs: Number(totem?.failedJobs ?? 0),
-    printer: totem?.printer ?? null,
+    printer: mapPrinterToSnake(totem?.printer),
   };
 }
 
@@ -73,6 +93,7 @@ export async function PUT(req: Request) {
       connectionType: "tcp",
       ip: body?.ip,
       port: body?.port,
+      brand: body?.brand,
       model: body?.model,
       escposProfile: body?.escpos_profile,
       paperWidthMm: body?.paper_width_mm,

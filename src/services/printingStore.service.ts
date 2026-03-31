@@ -3,6 +3,7 @@ export type TotemPrinterConfigInput = {
   totem_id: string;
   ip: string;
   port: number;
+  brand?: string;
   model: string;
   escpos_profile: string;
   paper_width_mm: number;
