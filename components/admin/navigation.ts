@@ -11,6 +11,8 @@ export const STORE_MENU_ITEMS: AdminMenuItem[] = [
   { label: "Impressoras", href: "/impressoras" },
   { label: "Produtos", href: "/produtos" },
   { label: "Categorias", href: "/categorias" },
+  { label: "Geladeiras", href: "/geladeiras" },
+  { label: "Fechaduras", href: "/fechaduras" },
   { label: "Estoque", href: "/estoque" },
   { label: "Tela Inicial", href: "/kiosk" },
   { label: "Banner do Menu", href: "/menu-banner" },

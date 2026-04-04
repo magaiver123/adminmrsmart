@@ -20,6 +20,8 @@ import {
   FileText,
   User,
   Library,
+  Refrigerator,
+  Lock,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -59,6 +61,8 @@ const iconByHref = {
   "/print-agents": MonitorSmartphone,
   "/produtos": Package,
   "/categorias": FolderOpen,
+  "/geladeiras": Refrigerator,
+  "/fechaduras": Lock,
   "/estoque": Warehouse,
   "/kiosk": Monitor,
   "/menu-banner": Monitor,

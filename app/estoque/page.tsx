@@ -1,11 +1,28 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { AdminLayout } from "@/components/admin/admin-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useState } from "react"
+import { AdminLayout } from "@/components/admin/admin-layout"
+import { useStore } from "@/components/admin/store-context"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -13,345 +30,385 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/ui/table"
+import { History, Refrigerator } from "lucide-react"
+import { fetchFridges } from "@/src/services/fridges.service"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Search,
-  Plus,
-  Minus,
-  Package,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  History,
-} from "lucide-react";
-import { useStore } from "@/components/admin/store-context";
+  adjustFridgeInventoryApi,
+  fetchFridgeInventoryHistory,
+  fetchFridgeInventoryProducts,
+  setFridgeMixItem,
+} from "@/src/services/fridgeInventory.service"
 
-import {
-  adjustStockApi,
-  fetchStockHistory,
-  fetchStockProducts,
-} from "@/src/services/stock.service";
+type FridgeRow = {
+  id: string
+  name: string
+  code: string
+  status: string
+}
 
-type StockProduct = {
-  id: string;
-  name: string;
-  quantity: number;
-};
+type ProductRow = {
+  id: string
+  name: string
+  in_mix: boolean
+  quantity: number
+}
 
-type HistoryItem = {
-  id: string;
-  product: string;
-  type: "entrada" | "saida" | "ajuste";
-  qty: number;
-  reason: string | null;
-  user: string | null;
-  date: string;
-};
-
-const statusConfig = {
-  ok: { label: "OK", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  low: {
-    label: "Baixo",
-    color: "bg-yellow-100 text-yellow-700",
-    icon: AlertTriangle,
-  },
-  out: { label: "Zerado", color: "bg-red-100 text-red-700", icon: XCircle },
-};
-
-const typeConfig = {
-  entrada: { label: "Entrada", color: "bg-green-100 text-green-700" },
-  saida: { label: "Saída", color: "bg-red-100 text-red-700" },
-  ajuste: { label: "Ajuste", color: "bg-blue-100 text-blue-700" },
-};
+type HistoryRow = {
+  id: string
+  product: string
+  type: string
+  qty: number
+  reason: string | null
+  created_at: string
+}
 
 export default function EstoquePage() {
-  const { store } = useStore();
-  const [stock, setStock] = useState<StockProduct[]>([]);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(
-    null
-  );
+  const { store } = useStore()
 
-  const [movementType, setMovementType] = useState<"entrada" | "saida" | null>(
-    null
-  );
-  const [quantity, setQuantity] = useState("");
-  const [reason, setReason] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [fridges, setFridges] = useState<FridgeRow[]>([])
+  const [selectedFridgeId, setSelectedFridgeId] = useState<string>("")
+  const [products, setProducts] = useState<ProductRow[]>([])
+  const [history, setHistory] = useState<HistoryRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [savingMixByProduct, setSavingMixByProduct] = useState<Record<string, boolean>>({})
 
-  useEffect(() => {
-    loadAll();
-  }, [store?.id]);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null)
+  const [movementType, setMovementType] = useState<"entrada" | "saida">("entrada")
+  const [quantity, setQuantity] = useState("")
+  const [reason, setReason] = useState("")
+  const [savingAdjust, setSavingAdjust] = useState(false)
 
-  async function loadAll() {
-    if (!store?.id) {
-      setStock([]);
-      setHistory([]);
-      return;
+  async function loadFridges(storeId: string) {
+    const fridgeData = await fetchFridges(storeId)
+    const activeFridges = fridgeData.filter((fridge: FridgeRow) => fridge.status === "active")
+    setFridges(activeFridges)
+    if (!selectedFridgeId || !activeFridges.some((fridge) => fridge.id === selectedFridgeId)) {
+      setSelectedFridgeId(activeFridges[0]?.id || "")
     }
-
-    const [stockData, historyData] = await Promise.all([
-      fetchStockProducts(store.id),
-      fetchStockHistory(store.id),
-    ]);
-
-    setStock(stockData);
-    setHistory(historyData);
   }
 
-  const openAdjustModal = (product: StockProduct) => {
-    setSelectedProduct(product);
-    setMovementType(null);
-    setQuantity("");
-    setReason("");
-    setIsAdjustModalOpen(true);
-  };
+  async function loadInventory(storeId: string, fridgeId: string) {
+    if (!fridgeId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const [productData, historyData] = await Promise.all([
+        fetchFridgeInventoryProducts(storeId, fridgeId),
+        fetchFridgeInventoryHistory(storeId, fridgeId),
+      ])
+      setProducts(productData)
+      setHistory(historyData)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Erro ao carregar estoque.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!store?.id) {
+      setFridges([])
+      setSelectedFridgeId("")
+      setProducts([])
+      setHistory([])
+      return
+    }
+    void loadFridges(store.id)
+  }, [store?.id])
+
+  useEffect(() => {
+    if (!store?.id || !selectedFridgeId) {
+      setProducts([])
+      setHistory([])
+      return
+    }
+    void loadInventory(store.id, selectedFridgeId)
+  }, [store?.id, selectedFridgeId])
+
+  const selectedFridge = useMemo(
+    () => fridges.find((fridge) => fridge.id === selectedFridgeId) || null,
+    [fridges, selectedFridgeId],
+  )
+
+  const stats = useMemo(() => {
+    const inMix = products.filter((product) => product.in_mix)
+    const lowStock = inMix.filter((product) => product.quantity > 0 && product.quantity <= 5).length
+    const outOfStock = inMix.filter((product) => product.quantity === 0).length
+    return {
+      totalProducts: products.length,
+      inMix: inMix.length,
+      lowStock,
+      outOfStock,
+    }
+  }, [products])
+
+  async function handleToggleMix(product: ProductRow, checked: boolean) {
+    if (!store?.id || !selectedFridgeId) return
+    setSavingMixByProduct((prev) => ({ ...prev, [product.id]: true }))
+    try {
+      await setFridgeMixItem({
+        store_id: store.id,
+        fridge_id: selectedFridgeId,
+        product_id: product.id,
+        in_mix: checked,
+      })
+      await loadInventory(store.id, selectedFridgeId)
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "Erro ao atualizar mix.")
+    } finally {
+      setSavingMixByProduct((prev) => ({ ...prev, [product.id]: false }))
+    }
+  }
+
+  function openAdjustModal(product: ProductRow) {
+    setSelectedProduct(product)
+    setMovementType("entrada")
+    setQuantity("")
+    setReason("")
+    setIsAdjustModalOpen(true)
+  }
 
   async function handleConfirmAdjust() {
-    if (!selectedProduct || !movementType || !quantity || !store) return;
+    if (!store?.id || !selectedFridgeId || !selectedProduct) return
+    const qty = Number(quantity)
+    if (!Number.isFinite(qty) || qty <= 0) return
 
-    const qty = Number(quantity);
-    if (qty <= 0) return;
-
-    setLoading(true);
-
+    setSavingAdjust(true)
+    setError(null)
     try {
-      await adjustStockApi({
-        productId: selectedProduct.id,
+      await adjustFridgeInventoryApi({
+        store_id: store.id,
+        fridge_id: selectedFridgeId,
+        product_id: selectedProduct.id,
         type: movementType,
         quantity: qty,
         reason,
-        storeId: store.id,
-      });
-
-      await loadAll();
-      setIsAdjustModalOpen(false);
-    } catch (err: any) {
-      alert(err.message ?? "Erro ao ajustar estoque");
+      })
+      setIsAdjustModalOpen(false)
+      await loadInventory(store.id, selectedFridgeId)
+    } catch (adjustError) {
+      setError(adjustError instanceof Error ? adjustError.message : "Erro ao ajustar estoque.")
     } finally {
-      setLoading(false);
+      setSavingAdjust(false)
     }
   }
-
-  const lowStockCount = stock.filter(
-    (p) => p.quantity > 0 && p.quantity <= 5
-  ).length;
-  const outOfStockCount = stock.filter((p) => p.quantity === 0).length;
 
   if (!store) {
     return (
       <AdminLayout title="Estoque">
-        <p className="text-muted-foreground">
-          Selecione uma loja para gerenciar o estoque.
-        </p>
+        <p className="text-muted-foreground">Selecione uma loja para gerenciar estoque.</p>
       </AdminLayout>
-    );
+    )
   }
 
   return (
     <AdminLayout title="Estoque">
       <div className="space-y-6">
-        {/* Stats Cards */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Refrigerator className="h-5 w-5" />
+              Estoque por Geladeira
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-[320px_1fr]">
+              <div className="space-y-1">
+                <Label>Geladeira</Label>
+                <Select value={selectedFridgeId} onValueChange={setSelectedFridgeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a geladeira" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fridges.map((fridge) => (
+                      <SelectItem key={fridge.id} value={fridge.id}>
+                        {fridge.name} ({fridge.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="rounded-md border bg-muted/30 px-4 py-3 text-sm">
+                {selectedFridge ? (
+                  <p>
+                    Operacao ativa em <strong>{selectedFridge.name}</strong> ({selectedFridge.code}).
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">Sem geladeira selecionada.</p>
+                )}
+              </div>
+            </div>
+
+            {error ? (
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total de Produtos
-              </CardTitle>
-              <Package className="h-4 w-4 text-primary" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Produtos</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stock.length}</div>
+              <div className="text-2xl font-bold">{stats.totalProducts}</div>
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Estoque OK
-              </CardTitle>
-              <CheckCircle className="h-4 w-4 text-green-500" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">No Mix</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {stock.filter((p) => p.quantity >= 10).length}
-              </div>
+              <div className="text-2xl font-bold">{stats.inMix}</div>
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Estoque Baixo
-              </CardTitle>
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Estoque Baixo</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-yellow-600">
-                {lowStockCount}
-              </div>
+              <div className="text-2xl font-bold text-yellow-600">{stats.lowStock}</div>
             </CardContent>
           </Card>
-
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Sem Estoque
-              </CardTitle>
-              <XCircle className="h-4 w-4 text-destructive" />
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Zerados</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {outOfStockCount}
-              </div>
+              <div className="text-2xl font-bold text-red-600">{stats.outOfStock}</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Tabs */}
-        <Tabs defaultValue="stock" className="space-y-4">
+        <Tabs defaultValue="mix" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="stock">Estoque Atual</TabsTrigger>
-            <TabsTrigger value="history">
-              Histórico de Movimentações
-            </TabsTrigger>
+            <TabsTrigger value="mix">Mix e Quantidade</TabsTrigger>
+            <TabsTrigger value="history">Historico da Geladeira</TabsTrigger>
           </TabsList>
 
-          {/* ESTOQUE */}
-          <TabsContent value="stock" className="space-y-4">
+          <TabsContent value="mix">
             <Card>
               <CardContent className="p-0">
+                {loading ? (
+                  <p className="px-4 py-3 text-sm text-muted-foreground">Carregando...</p>
+                ) : null}
+
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Produto</TableHead>
-                      <TableHead>Estoque Atual</TableHead>
+                      <TableHead>No Mix</TableHead>
+                      <TableHead>Quantidade</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
+                      <TableHead className="text-right">Acoes</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {stock.map((product) => {
-                      const status =
-                        product.quantity === 0
-                          ? "out"
-                          : product.quantity < 6
-                          ? "low"
-                          : "ok";
-
-                      const config =
-                        statusConfig[status as keyof typeof statusConfig];
-                      const StatusIcon = config.icon;
+                    {products.map((product) => {
+                      const isLow = product.in_mix && product.quantity > 0 && product.quantity <= 5
+                      const isOut = product.in_mix && product.quantity === 0
+                      const statusLabel = !product.in_mix
+                        ? "Fora do mix"
+                        : isOut
+                        ? "Sem estoque"
+                        : isLow
+                        ? "Baixo"
+                        : "OK"
 
                       return (
                         <TableRow key={product.id}>
-                          <TableCell className="font-medium">
-                            {product.name}
+                          <TableCell className="font-medium">{product.name}</TableCell>
+                          <TableCell>
+                            <Switch
+                              checked={product.in_mix}
+                              disabled={savingMixByProduct[product.id] === true}
+                              onCheckedChange={(checked) => void handleToggleMix(product, checked)}
+                            />
                           </TableCell>
                           <TableCell>{product.quantity}</TableCell>
                           <TableCell>
                             <Badge
-                              variant="secondary"
-                              className={`${config.color} gap-1`}
+                              variant={product.in_mix ? "default" : "secondary"}
+                              className={
+                                product.in_mix
+                                  ? isOut
+                                    ? "bg-red-600"
+                                    : isLow
+                                    ? "bg-yellow-500"
+                                    : ""
+                                  : ""
+                              }
                             >
-                              <StatusIcon className="h-3 w-3" />
-                              {config.label}
+                              {statusLabel}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
-                              variant="outline"
                               size="sm"
+                              variant="outline"
+                              disabled={!product.in_mix}
                               onClick={() => openAdjustModal(product)}
                             >
-                              Ajustar Estoque
+                              Ajustar
                             </Button>
                           </TableCell>
                         </TableRow>
-                      );
+                      )
                     })}
+                    {products.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          Nenhum produto encontrado para esta loja.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* HISTÓRICO */}
           <TabsContent value="history">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <History className="h-5 w-5 text-primary" />
-                  Histórico de Movimentações
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <History className="h-4 w-4" />
+                  Historico de movimentacoes
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Data/Hora</TableHead>
+                      <TableHead>Data</TableHead>
                       <TableHead>Produto</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Quantidade</TableHead>
                       <TableHead>Motivo</TableHead>
-                      <TableHead>Usuário</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {history.map((entry) => {
-                      const config = typeConfig[entry.type];
-                      return (
-                        <TableRow key={entry.id}>
-                          <TableCell className="text-muted-foreground">
-                            {entry.date}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {entry.product}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className={config.color}>
-                              {config.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={
-                                entry.type === "entrada"
-                                  ? "text-green-600"
-                                  : entry.type === "saida"
-                                  ? "text-red-600"
-                                  : "text-blue-600"
-                              }
-                            >
-                              {entry.type === "entrada" ? "+" : "-"}
-                              {Math.abs(entry.qty)}
-                            </span>
-                          </TableCell>
-                          <TableCell>{entry.reason ?? "-"}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {entry.user ?? "-"}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {history.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell>{new Date(entry.created_at).toLocaleString("pt-BR")}</TableCell>
+                        <TableCell>{entry.product}</TableCell>
+                        <TableCell>{entry.type}</TableCell>
+                        <TableCell>{entry.qty}</TableCell>
+                        <TableCell>{entry.reason || "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {history.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          Sem historico para esta geladeira.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -359,84 +416,62 @@ export default function EstoquePage() {
           </TabsContent>
         </Tabs>
 
-        {/* MODAL */}
         <Dialog open={isAdjustModalOpen} onOpenChange={setIsAdjustModalOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent>
             <DialogHeader>
-              <DialogTitle>Ajustar Estoque</DialogTitle>
-              <DialogDescription>{selectedProduct?.name}</DialogDescription>
+              <DialogTitle>Ajustar Estoque da Geladeira</DialogTitle>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
-              <div className="flex items-center justify-center gap-4 py-4">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Estoque Atual</p>
-                  <p className="text-3xl font-bold">
-                    {selectedProduct?.quantity}
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                Produto: <strong>{selectedProduct?.name}</strong>
+                <br />
+                Quantidade atual: <strong>{selectedProduct?.quantity ?? 0}</strong>
               </div>
 
-              <Label>Tipo de Movimentação</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  onClick={() => setMovementType("entrada")}
-                  className={
-                    movementType === "entrada"
-                      ? "bg-green-600 text-white hover:bg-green-600"
-                      : "border border-green-200 text-green-700 bg-transparent hover:bg-green-50"
-                  }
+              <div className="space-y-1">
+                <Label>Tipo</Label>
+                <Select
+                  value={movementType}
+                  onValueChange={(value) => setMovementType(value as "entrada" | "saida")}
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Entrada
-                </Button>
-
-                <Button
-                  onClick={() => setMovementType("saida")}
-                  className={
-                    movementType === "saida"
-                      ? "bg-red-600 text-white hover:bg-red-600"
-                      : "border border-red-200 text-red-700 bg-transparent hover:bg-red-50"
-                  }
-                >
-                  <Minus className="h-4 w-4 mr-2" />
-                  Saída
-                </Button>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="entrada">entrada</SelectItem>
+                    <SelectItem value="saida">saida</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label>Quantidade</Label>
                 <Input
                   type="number"
+                  min={1}
                   value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
+                  onChange={(event) => setQuantity(event.target.value)}
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Motivo do Ajuste</Label>
-                <Textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={3}
-                />
+              <div className="space-y-1">
+                <Label>Motivo</Label>
+                <Input value={reason} onChange={(event) => setReason(event.target.value)} />
               </div>
-            </div>
 
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setIsAdjustModalOpen(false)}
-              >
-                Cancelar
-              </Button>
-              <Button onClick={handleConfirmAdjust} disabled={loading}>
-                Confirmar Ajuste
-              </Button>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsAdjustModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleConfirmAdjust} disabled={savingAdjust || !quantity}>
+                  {savingAdjust ? "Salvando..." : "Confirmar"}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       </div>
     </AdminLayout>
-  );
+  )
 }
