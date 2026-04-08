@@ -448,6 +448,10 @@ export default function FechadurasPage() {
                 {locks.map((lock) => {
                   const live = liveByLockId.get(lock.id)
                   const command = live?.lastCommand
+                  const canTest =
+                    Boolean(lock.device_id) &&
+                    lock.status === "active" &&
+                    live?.connectionStatus === "online"
                   return (
                     <TableRow key={lock.id}>
                       <TableCell className="font-mono text-xs">{lock.device_id || "-"}</TableCell>
@@ -483,7 +487,7 @@ export default function FechadurasPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleTestOpen(lock)}
-                            disabled={!lock.device_id || lock.status !== "active"}
+                            disabled={!canTest}
                             className="gap-2"
                           >
                             <TestTube2 className="h-4 w-4" />
