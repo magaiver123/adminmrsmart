@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { AdminLayout } from "@/components/admin/admin-layout"
 import { useStore } from "@/components/admin/store-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,13 +29,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
-import { Lock, Pencil, Plus, TestTube2 } from "lucide-react"
+import { Activity, Lock, Pencil, Plus, TestTube2 } from "lucide-react"
 import {
   createLock,
+  fetchLockDiagnosticEvents,
   fetchLockDiagnostics,
   fetchLocks,
+  fetchLockLiveStatus,
   testOpenLock,
   updateLock,
+  type LockDiagnosticEventRow,
+  type LockDiagnosticRow,
+  type LockLiveStatusRow,
 } from "@/src/services/locks.service"
 import { fetchFridges, updateFridge } from "@/src/services/fridges.service"
 
@@ -58,25 +63,43 @@ type FridgeRow = {
   code: string
 }
 
-type DiagnosticRow = {
-  id: string
-  order_id: string
-  device_id: string
-  topic: string
-  status: string
-  error: string | null
-  attempts: number
-  created_at: string
+function stageToLabel(stage: string) {
+  if (stage === "created") return "Criado"
+  if (stage === "publish_attempt") return "Tentativa de envio"
+  if (stage === "published") return "Comando publicado"
+  if (stage === "device_received") return "Comando recebido"
+  if (stage === "unlock_started") return "Destravamento iniciado"
+  if (stage === "unlock_completed") return "Destravamento concluído"
+  if (stage === "unlock_failed") return "Falha no destravamento"
+  if (stage === "timeout") return "Tempo esgotado"
+  return stage || "Desconhecido"
+}
+
+function resultBadge(result: string) {
+  if (result === "success") return <Badge className="bg-green-600">Sucesso</Badge>
+  if (result === "error") return <Badge variant="destructive">Falha</Badge>
+  if (result === "in_progress") return <Badge className="bg-blue-600">Em andamento</Badge>
+  return <Badge variant="outline">Desconhecido</Badge>
+}
+
+function connectionBadge(status: "online" | "stale" | "offline" | "unknown") {
+  if (status === "online") return <Badge className="bg-green-600">Online</Badge>
+  if (status === "stale") return <Badge className="bg-yellow-600">Instável</Badge>
+  if (status === "offline") return <Badge variant="secondary">Offline</Badge>
+  return <Badge variant="outline">Desconhecido</Badge>
 }
 
 export default function FechadurasPage() {
   const { store } = useStore()
   const [locks, setLocks] = useState<LockRow[]>([])
   const [fridges, setFridges] = useState<FridgeRow[]>([])
-  const [diagnostics, setDiagnostics] = useState<DiagnosticRow[]>([])
+  const [diagnostics, setDiagnostics] = useState<LockDiagnosticRow[]>([])
+  const [liveStatus, setLiveStatus] = useState<LockLiveStatusRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null)
+  const [realtimeWarning, setRealtimeWarning] = useState<string | null>(null)
 
   const [isLockModalOpen, setIsLockModalOpen] = useState(false)
   const [mode, setMode] = useState<"create" | "edit">("create")
@@ -89,20 +112,68 @@ export default function FechadurasPage() {
   const [movingLock, setMovingLock] = useState<LockRow | null>(null)
   const [targetFridgeId, setTargetFridgeId] = useState("")
 
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false)
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState<LockDiagnosticRow | null>(null)
+  const [timelineEvents, setTimelineEvents] = useState<LockDiagnosticEventRow[]>([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineError, setTimelineError] = useState<string | null>(null)
+
+  const liveByLockId = useMemo(() => {
+    const map = new Map<string, LockLiveStatusRow>()
+    for (const item of liveStatus) map.set(item.lockId, item)
+    return map
+  }, [liveStatus])
+
+  const summary = useMemo(() => {
+    let online = 0
+    let stale = 0
+    let offline = 0
+    let unknown = 0
+
+    for (const item of liveStatus) {
+      if (item.connectionStatus === "online") online += 1
+      else if (item.connectionStatus === "stale") stale += 1
+      else if (item.connectionStatus === "offline") offline += 1
+      else unknown += 1
+    }
+
+    return { online, stale, offline, unknown }
+  }, [liveStatus])
+
+  async function loadRuntime(activeStoreId: string, silent = false) {
+    if (!silent) setLoading(true)
+    try {
+      const [diagnosticsData, liveData] = await Promise.all([
+        fetchLockDiagnostics(activeStoreId, 25),
+        fetchLockLiveStatus(activeStoreId),
+      ])
+      setDiagnostics(diagnosticsData)
+      setLiveStatus(liveData.items)
+      setLastUpdatedAt(liveData.updatedAt)
+    } catch (runtimeError) {
+      setError(runtimeError instanceof Error ? runtimeError.message : "Erro ao atualizar status em tempo real.")
+    } finally {
+      if (!silent) setLoading(false)
+    }
+  }
+
   async function loadAll(activeStoreId: string) {
     setLoading(true)
     setError(null)
     try {
-      const [locksData, fridgesData, diagnosticsData] = await Promise.all([
+      const [locksData, fridgesData, diagnosticsData, liveData] = await Promise.all([
         fetchLocks(activeStoreId),
         fetchFridges(activeStoreId),
         fetchLockDiagnostics(activeStoreId, 25),
+        fetchLockLiveStatus(activeStoreId),
       ])
       setLocks(locksData)
       setFridges(fridgesData)
       setDiagnostics(diagnosticsData)
+      setLiveStatus(liveData.items)
+      setLastUpdatedAt(liveData.updatedAt)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Erro ao carregar modulo.")
+      setError(loadError instanceof Error ? loadError.message : "Erro ao carregar módulo.")
     } finally {
       setLoading(false)
     }
@@ -113,9 +184,48 @@ export default function FechadurasPage() {
       setLocks([])
       setFridges([])
       setDiagnostics([])
+      setLiveStatus([])
+      setRealtimeWarning(null)
       return
     }
+
     void loadAll(store.id)
+
+    const fallbackInterval = window.setInterval(() => {
+      void loadRuntime(store.id, true)
+    }, 8000)
+
+    let eventSource: EventSource | null = null
+    try {
+      eventSource = new EventSource(`/api/admin/locks/realtime?store_id=${store.id}`)
+      eventSource.addEventListener("snapshot", (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data)
+          if (Array.isArray(payload?.diagnostics)) {
+            setDiagnostics(payload.diagnostics as LockDiagnosticRow[])
+          }
+          if (Array.isArray(payload?.liveStatus)) {
+            setLiveStatus(payload.liveStatus as LockLiveStatusRow[])
+          }
+          if (typeof payload?.updatedAt === "string") {
+            setLastUpdatedAt(payload.updatedAt)
+          }
+          setRealtimeWarning(null)
+        } catch {
+          setRealtimeWarning("Falha ao interpretar evento em tempo real. Usando atualização periódica.")
+        }
+      })
+      eventSource.addEventListener("error", () => {
+        setRealtimeWarning("Canal em tempo real indisponível. Usando atualização periódica.")
+      })
+    } catch {
+      setRealtimeWarning("Canal em tempo real indisponível. Usando atualização periódica.")
+    }
+
+    return () => {
+      window.clearInterval(fallbackInterval)
+      if (eventSource) eventSource.close()
+    }
   }, [store?.id])
 
   const openCreateModal = () => {
@@ -137,11 +247,11 @@ export default function FechadurasPage() {
   async function handleSaveLock() {
     if (!store?.id) return
     if ((status === "active" || status === "inactive") && !deviceId.trim()) {
-      setError("device_id e obrigatorio para lock ativo/inativo.")
+      setError("device_id é obrigatório para lock ativo/inativo.")
       return
     }
     if (status === "pending" && deviceId.trim()) {
-      setError("Lock pendente nao deve ter device_id.")
+      setError("Lock pendente não deve ter device_id.")
       return
     }
 
@@ -180,8 +290,9 @@ export default function FechadurasPage() {
         store_id: store.id,
         lock_id: lock.id,
       })
+      const traceSuffix = response?.traceId ? ` | trace: ${response.traceId}` : ""
       setFeedback(
-        `Comando enviado para ${response.deviceId || lock.device_id || "lock"} (topic: ${response.topic}).`,
+        `Comando enviado para ${response.deviceId || lock.device_id || "lock"} (tópico: ${response.topic}).${traceSuffix}`,
       )
       await loadAll(store.id)
     } catch (testError) {
@@ -210,6 +321,32 @@ export default function FechadurasPage() {
     }
   }
 
+  async function openTimelineModal(diag: LockDiagnosticRow) {
+    if (!store?.id) return
+    setSelectedDiagnostic(diag)
+    setTimelineEvents([])
+    setTimelineError(null)
+    setTimelineLoading(true)
+    setIsTimelineModalOpen(true)
+
+    try {
+      const events = await fetchLockDiagnosticEvents({
+        store_id: store.id,
+        trace_id: diag.traceId,
+        limit: 100,
+      })
+      setTimelineEvents(events)
+    } catch (timelineLoadError) {
+      setTimelineError(
+        timelineLoadError instanceof Error
+          ? timelineLoadError.message
+          : "Erro ao carregar a linha do tempo.",
+      )
+    } finally {
+      setTimelineLoading(false)
+    }
+  }
+
   if (!store) {
     return (
       <AdminLayout title="Fechaduras">
@@ -221,6 +358,41 @@ export default function FechadurasPage() {
   return (
     <AdminLayout title="Fechaduras">
       <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">ESP Online</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold text-green-600">{summary.online}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">ESP Instável</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold text-yellow-600">{summary.stale}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">ESP Offline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold text-zinc-700">{summary.offline}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Sem Telemetria</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold text-zinc-500">{summary.unknown}</p>
+            </CardContent>
+          </Card>
+        </div>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -229,8 +401,13 @@ export default function FechadurasPage() {
                 Fechaduras da loja {store.name}
               </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Cadastre, configure e teste as fechaduras da operacao MQTT/ESP.
+                Cadastre, configure e acompanhe o fluxo MQTT/ESP em tempo real.
               </p>
+              {lastUpdatedAt ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Última atualização: {new Date(lastUpdatedAt).toLocaleString("pt-BR")}
+                </p>
+              ) : null}
             </div>
             <Button onClick={openCreateModal} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -248,74 +425,84 @@ export default function FechadurasPage() {
                 {feedback}
               </div>
             ) : null}
+            {realtimeWarning ? (
+              <div className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-700">
+                {realtimeWarning}
+              </div>
+            ) : null}
             {loading ? <p className="text-sm text-muted-foreground">Carregando...</p> : null}
 
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Device ID</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Cadastro</TableHead>
+                  <TableHead>Conexão ESP</TableHead>
+                  <TableHead>Último Comando</TableHead>
                   <TableHead>Geladeira</TableHead>
                   <TableHead>Habilitada</TableHead>
-                  <TableHead className="text-right">Acoes</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {locks.map((lock) => (
-                  <TableRow key={lock.id}>
-                    <TableCell className="font-mono text-xs">
-                      {lock.device_id || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          lock.status === "active"
-                            ? "default"
-                            : lock.status === "pending"
-                            ? "secondary"
-                            : "outline"
-                        }
-                      >
-                        {lock.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {lock.fridge ? `${lock.fridge.name} (${lock.fridge.code})` : "-"}
-                    </TableCell>
-                    <TableCell>{lock.enabled ? "Sim" : "Nao"}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestOpen(lock)}
-                          disabled={!lock.device_id || lock.status !== "active"}
-                          className="gap-2"
+                {locks.map((lock) => {
+                  const live = liveByLockId.get(lock.id)
+                  const command = live?.lastCommand
+                  return (
+                    <TableRow key={lock.id}>
+                      <TableCell className="font-mono text-xs">{lock.device_id || "-"}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            lock.status === "active"
+                              ? "default"
+                              : lock.status === "pending"
+                              ? "secondary"
+                              : "outline"
+                          }
                         >
-                          <TestTube2 className="h-4 w-4" />
-                          Testar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openMoveModal(lock)}
-                        >
-                          Mover
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditModal(lock)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          {lock.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{live ? connectionBadge(live.connectionStatus) : connectionBadge("unknown")}</TableCell>
+                      <TableCell>
+                        {command ? (
+                          <div className="space-y-1">
+                            {resultBadge(command.result)}
+                            <p className="text-xs text-muted-foreground">{stageToLabel(command.stage)}</p>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Sem comando recente</span>
+                        )}
+                      </TableCell>
+                      <TableCell>{lock.fridge ? `${lock.fridge.name} (${lock.fridge.code})` : "-"}</TableCell>
+                      <TableCell>{lock.enabled ? "Sim" : "Não"}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleTestOpen(lock)}
+                            disabled={!lock.device_id || lock.status !== "active"}
+                            className="gap-2"
+                          >
+                            <TestTube2 className="h-4 w-4" />
+                            Testar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openMoveModal(lock)}>
+                            Mover
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEditModal(lock)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
                 {locks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       Nenhuma fechadura cadastrada.
                     </TableCell>
                   </TableRow>
@@ -327,32 +514,47 @@ export default function FechadurasPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Diagnostico (ultimos comandos)</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Diagnóstico (últimos comandos)
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
+                  <TableHead>Data/Hora</TableHead>
                   <TableHead>Device</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Origem</TableHead>
+                  <TableHead>Etapa</TableHead>
+                  <TableHead>Resultado</TableHead>
+                  <TableHead>Código</TableHead>
+                  <TableHead>Mensagem</TableHead>
                   <TableHead>Tentativas</TableHead>
-                  <TableHead>Erro</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {diagnostics.map((diag) => (
                   <TableRow key={diag.id}>
-                    <TableCell>{new Date(diag.created_at).toLocaleString("pt-BR")}</TableCell>
-                    <TableCell className="font-mono text-xs">{diag.device_id}</TableCell>
-                    <TableCell>{diag.status}</TableCell>
-                    <TableCell>{diag.attempts}</TableCell>
+                    <TableCell>{new Date(diag.createdAt || diag.created_at).toLocaleString("pt-BR")}</TableCell>
+                    <TableCell className="font-mono text-xs">{diag.device_id || "-"}</TableCell>
+                    <TableCell>{diag.source || "-"}</TableCell>
+                    <TableCell>{stageToLabel(diag.stage || diag.status)}</TableCell>
+                    <TableCell>{resultBadge(diag.result)}</TableCell>
+                    <TableCell className="font-mono text-xs">{diag.code || "-"}</TableCell>
                     <TableCell className="text-xs text-red-600">{diag.error || "-"}</TableCell>
+                    <TableCell>{diag.attempts}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" onClick={() => openTimelineModal(diag)}>
+                        Timeline
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {diagnostics.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       Sem comandos recentes.
                     </TableCell>
                   </TableRow>
@@ -378,12 +580,7 @@ export default function FechadurasPage() {
               </div>
               <div className="space-y-1">
                 <Label>Status</Label>
-                <Select
-                  value={status}
-                  onValueChange={(value) =>
-                    setStatus(value as "pending" | "active" | "inactive")
-                  }
-                >
+                <Select value={status} onValueChange={(value) => setStatus(value as "pending" | "active" | "inactive")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -413,7 +610,7 @@ export default function FechadurasPage() {
             </DialogHeader>
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Se a fechadura destino ja estiver vinculada, o sistema faz a troca (swap) automaticamente.
+                Se a fechadura de destino já estiver vinculada, o sistema faz a troca (swap) automaticamente.
               </p>
               <div className="space-y-1">
                 <Label>Geladeira de destino</Label>
@@ -439,6 +636,64 @@ export default function FechadurasPage() {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isTimelineModalOpen} onOpenChange={setIsTimelineModalOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Linha do Tempo do Comando</DialogTitle>
+            </DialogHeader>
+
+            {selectedDiagnostic ? (
+              <div className="space-y-3">
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <p><span className="font-semibold">Trace:</span> {selectedDiagnostic.traceId}</p>
+                  <p><span className="font-semibold">Device:</span> {selectedDiagnostic.device_id || "-"}</p>
+                  <p><span className="font-semibold">Socket:</span> {selectedDiagnostic.socketId || "-"}</p>
+                </div>
+
+                {timelineError ? (
+                  <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {timelineError}
+                  </div>
+                ) : null}
+
+                {timelineLoading ? (
+                  <p className="text-sm text-muted-foreground">Carregando timeline...</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data/Hora</TableHead>
+                        <TableHead>Etapa</TableHead>
+                        <TableHead>Resultado</TableHead>
+                        <TableHead>Código</TableHead>
+                        <TableHead>Mensagem</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {timelineEvents.map((event) => (
+                        <TableRow key={event.id}>
+                          <TableCell>{new Date(event.created_at).toLocaleString("pt-BR")}</TableCell>
+                          <TableCell>{stageToLabel(event.stage)}</TableCell>
+                          <TableCell>{resultBadge(event.result)}</TableCell>
+                          <TableCell className="font-mono text-xs">{event.code || "-"}</TableCell>
+                          <TableCell className="text-xs text-red-600">{event.error || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {timelineEvents.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground">
+                            Sem eventos para este trace.
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
       </div>
