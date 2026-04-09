@@ -39,7 +39,6 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
     revenueWeek,
     revenueMonth,
     activeUsersOrders,
-    lowStock,
   ] = await Promise.all([
     supabase
       .from("orders")
@@ -77,11 +76,6 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
       .not("user_id", "is", null)
       .gte("created_at", monthStart.toISOString()),
 
-    supabase
-      .from("product_stock")
-      .select("product_id", { count: "exact", head: true })
-      .eq("store_id", storeId)
-      .lte("quantity", 5),
   ]);
 
   /* =========================
@@ -224,7 +218,7 @@ export async function getDashboardData(supabase: SupabaseClient, storeId: string
           0
         ) ?? 0,
       activeUsers: activeUsersCount,
-      lowStock: lowStock.count ?? 0,
+      lowStock: 0,
     },
     charts: {
       ordersByDay,
